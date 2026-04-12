@@ -1,30 +1,57 @@
 import { Move } from './Move.js';
 
 /**
- * Sudoku - 数独棋盘领域对象（不可变设计）
+ * Sudoku - 数独棋盘领域对象
  * 
  * 设计原则：
- * - grid 在构造后不可变
- * - 所有修改操作返回新的 Sudoku 实例
+ * - grid 在构造后可直接修改，但通过 #fixed 掩码区分固定格子
+ * - guess() 直接修改实例（可变设计，兼容测试用例）
  * - clone() 用于显式深拷贝
  */
 export class Sudoku {
-  #grid;  // 私有属性，外部无法直接访问
+  #grid;    // 私有属性，当前完整局面
+  #fixed;   // 私有属性，固定掩码（true = 固定不可改）
 
   /**
-   * @param {number[][]} grid - 9x9 数独棋盘，数字范围 0-9，0 表示空白
+   * @param {number[][]|{grid: number[][], fixed: boolean[][]}} input - 
+   *   9x9 数独棋盘，或包含 grid 和 fixed 的对象
    */
-  constructor(grid) {
-    // 防御性拷贝：构造时深拷贝，保证内部数据不被外部修改
-    this.#grid = grid.map(row => [...row]);
+  constructor(input) {
+    if (input && input.grid && input.fixed) {
+      // 完整格式：{ grid, fixed }
+      this.#grid = input.grid.map(row => [...row]);
+      this.#fixed = input.fixed.map(row => [...row]);
+    } else {
+      // 简化格式：纯 grid，> 0 的视为固定数字
+      this.#grid = input.map(row => [...row]);
+      this.#fixed = this.#grid.map(row => row.map(v => v !== 0));
+    }
   }
 
   /**
-   * 获取棋盘数据（方法形式，保留兼容性，因为测试接口是getGrid，所以没删掉这个函数）
+   * 获取棋盘数据
    * @returns {number[][]}
    */
   getGrid() {
     return this.#grid;
+  }
+
+  /**
+   * 获取固定掩码（用于 UI 区分固定数字和用户输入）
+   * @returns {boolean[][]}
+   */
+  getFixed() {
+    return this.#fixed;
+  }
+
+  /**
+   * 判断指定位置是否是固定格子
+   * @param {number} row
+   * @param {number} col
+   * @returns {boolean}
+   */
+  isFixedAt(row, col) {
+    return this.#fixed[row][col];
   }
 
   /**
@@ -37,6 +64,11 @@ export class Sudoku {
       move = new Move(move);
     }
 
+    // 如果是固定格子，无法修改
+    if (this.#fixed[move.row][move.col]) {
+      return;  // 静默忽略，固定格子不能修改
+    }
+
     // 直接修改当前实例的 grid
     this.#grid[move.row][move.col] = move.value;
   }
@@ -46,7 +78,10 @@ export class Sudoku {
    * @returns {Sudoku}
    */
   clone() {
-    return new Sudoku(this.#grid.map(row => [...row]));
+    return new Sudoku({
+      grid: this.#grid.map(row => [...row]),
+      fixed: this.#fixed.map(row => [...row])
+    });
   }
 
   /**
@@ -55,7 +90,8 @@ export class Sudoku {
    */
   toJSON() {
     return {
-      grid: this.#grid.map(row => [...row])
+      grid: this.#grid.map(row => [...row]),
+      fixed: this.#fixed.map(row => [...row])
     };
   }
 
@@ -65,7 +101,7 @@ export class Sudoku {
    * @returns {Sudoku}
    */
   static fromJSON(json) {
-    return new Sudoku(json.grid);
+    return new Sudoku({ grid: json.grid, fixed: json.fixed });
   }
 
   /**
@@ -73,7 +109,6 @@ export class Sudoku {
    * @returns {string}
    */
   toString() {
-    // 复用现有的美化输出格式
     let out = '╔═══════╤═══════╤═══════╗\n';
 
     for (let row = 0; row < 9; row++) {

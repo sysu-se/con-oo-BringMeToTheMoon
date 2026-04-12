@@ -10,9 +10,9 @@ import { Move } from './Move.js';
  * - 处理用户操作
  */
 export class Game {
-  #undoStack = [];     // Undo 栈：存储之前的状态
-  #redoStack = [];     // Redo 栈：存储被撤销的状态
-  #currentSudoku;      // 当前数独状态（不可变 Sudoku 实例）
+  #undoStack = [];      // Undo 栈：存储之前的状态（Sudoku 快照）
+  #redoStack = [];      // Redo 栈：存储被撤销的状态（Sudoku 快照）
+  #currentSudoku;       // 当前数独状态（Sudoku 实例）
 
   /**
    * @param {{ sudoku: Sudoku }} config
