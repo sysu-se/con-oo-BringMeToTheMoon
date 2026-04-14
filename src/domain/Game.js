@@ -1,44 +1,60 @@
+/**
+ * @fileoverview 游戏会话领域对象
+ * @module domain/Game
+ */
+
 import { Sudoku, createSudokuFromJSON } from './Sudoku.js';
 import { Move } from './Move.js';
 
 /**
- * Game - 游戏会话领域对象
+ * 游戏会话领域对象
  * 
  * 职责：
  * - 管理当前数独状态
  * - 维护 Undo/Redo 历史
  * - 处理用户操作
+ * - 输入验证
  */
 export class Game {
-  #undoStack = [];      // Undo 栈：存储之前的状态（Sudoku 快照）
-  #redoStack = [];      // Redo 栈：存储被撤销的状态（Sudoku 快照）
-  #currentSudoku;       // 当前数独状态（Sudoku 实例）
+  /** @type {Sudoku[]} Undo 栈，存储 Sudoku 快照 */
+  _undoStack = [];
+  
+  /** @type {Sudoku[]} Redo 栈，存储 Sudoku 快照 */
+  _redoStack = [];
+  
+  /** @type {Sudoku} 当前数独状态 */
+  _currentSudoku;
 
   /**
-   * @param {{ sudoku: Sudoku }} config
+   * @param {{sudoku: Sudoku}} config
+   * @throws {Error} sudoku 不是有效的 Sudoku 实例
    */
   constructor({ sudoku }) {
-    this.#currentSudoku = sudoku;
+    if (!(sudoku instanceof Sudoku)) {
+      throw new Error('Game: sudoku must be a Sudoku instance');
+    }
+    this._currentSudoku = sudoku;
   }
 
   /**
-   * 执行一步操作
-   * @param {Move|{row, col, value}} move
+   * 执行一步操作（会清空 Redo 栈）
+   * @param {Move | {row: number, col: number, value: number}} move
+   * @returns {boolean} true = 成功，false = 无效操作
    */
   guess(move) {
-    // 将 Move 转换为 Move 对象
     if (!(move instanceof Move)) {
       move = new Move(move);
     }
 
-    // 保存当前状态到 Undo 栈（使用 clone 保证快照完整）
-    this.#undoStack.push(this.#currentSudoku.clone());
-    
-    // 执行操作（Sudoku 是可变的，直接修改当前实例）
-    this.#currentSudoku.guess(move);
-    
-    // 新操作后清空 Redo 栈
-    this.#redoStack = [];
+    if (!this._currentSudoku.isValidMove(move.row, move.col, move.value)) {
+      return false;
+    }
+
+    this._undoStack.push(this._currentSudoku.clone());
+    this._currentSudoku.guess(move);
+    this._redoStack = [];
+
+    return true;
   }
 
   /**
@@ -47,11 +63,8 @@ export class Game {
   undo() {
     if (!this.canUndo()) return;
 
-    // 将当前状态保存到 Redo 栈
-    this.#redoStack.push(this.#currentSudoku.clone());
-    
-    // 从 Undo 栈恢复上一个状态
-    this.#currentSudoku = this.#undoStack.pop();
+    this._redoStack.push(this._currentSudoku.clone());
+    this._currentSudoku = this._undoStack.pop();
   }
 
   /**
@@ -60,55 +73,46 @@ export class Game {
   redo() {
     if (!this.canRedo()) return;
 
-    // 将当前状态保存到 Undo 栈
-    this.#undoStack.push(this.#currentSudoku.clone());
-    
-    // 从 Redo 栈恢复
-    this.#currentSudoku = this.#redoStack.pop();
+    this._undoStack.push(this._currentSudoku.clone());
+    this._currentSudoku = this._redoStack.pop();
   }
 
   /**
-   * 是否可以撤销
-   * @returns {boolean}
+   * @returns {boolean} 是否可以撤销
    */
   canUndo() {
-    return this.#undoStack.length > 0;
+    return this._undoStack.length > 0;
   }
 
   /**
-   * 是否可以重做
-   * @returns {boolean}
+   * @returns {boolean} 是否可以重做
    */
   canRedo() {
-    return this.#redoStack.length > 0;
+    return this._redoStack.length > 0;
   }
 
   /**
-   * 获取当前的 Sudoku 对象
    * @returns {Sudoku}
    */
   getSudoku() {
-    return this.#currentSudoku;
+    return this._currentSudoku;
   }
 
   /**
-   * 序列化 - 保存完整游戏状态
-   * @returns {Object}
+   * 序列化完整游戏状态
+   * @returns {{currentSudoku: Object, undoStack: Object[], redoStack: Object[]}}
    */
   toJSON() {
     return {
-      // 当前状态
-      currentSudoku: this.#currentSudoku.toJSON(),
-      // Undo 栈中的所有快照
-      undoStack: this.#undoStack.map(s => s.toJSON()),
-      // Redo 栈中的所有快照
-      redoStack: this.#redoStack.map(s => s.toJSON())
+      currentSudoku: this._currentSudoku.toJSON(),
+      undoStack: this._undoStack.map(s => s.toJSON()),
+      redoStack: this._redoStack.map(s => s.toJSON())
     };
   }
 
   /**
    * 从 JSON 反序列化恢复游戏状态
-   * @param {Object} json
+   * @param {{currentSudoku: Object, undoStack: Object[], redoStack: Object[]}} json
    * @returns {Game}
    */
   static fromJSON(json) {
@@ -116,19 +120,15 @@ export class Game {
       sudoku: createSudokuFromJSON(json.currentSudoku)
     });
     
-    // 恢复 Undo 栈
-    game.#undoStack = json.undoStack.map(s => createSudokuFromJSON(s));
-    
-    // 恢复 Redo 栈
-    game.#redoStack = json.redoStack.map(s => createSudokuFromJSON(s));
+    game._undoStack = json.undoStack.map(s => createSudokuFromJSON(s));
+    game._redoStack = json.redoStack.map(s => createSudokuFromJSON(s));
     
     return game;
   }
 }
 
 /**
- * 工厂函数：创建 Game
- * @param {{ sudoku: Sudoku }} config
+ * @param {{sudoku: Sudoku}} config
  * @returns {Game}
  */
 export function createGame({ sudoku }) {
@@ -136,7 +136,6 @@ export function createGame({ sudoku }) {
 }
 
 /**
- * 工厂函数：从 JSON 创建 Game
  * @param {Object} json
  * @returns {Game}
  */
