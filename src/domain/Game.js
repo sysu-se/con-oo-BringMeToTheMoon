@@ -38,15 +38,26 @@ export class Game {
 
   /**
    * 执行一步操作（会清空 Redo 栈）
+   * 验证流程：Move.isValid() → Sudoku.canApply() → isNoOp() → 执行
    * @param {Move | {row: number, col: number, value: number}} move
    * @returns {boolean} true = 成功，false = 无效操作
    */
   guess(move) {
     if (!(move instanceof Move)) {
+      // 先用静态方法验证格式
+      if (!Move.isValid(move.row, move.col, move.value)) {
+        return false;
+      }
       move = new Move(move);
     }
 
-    if (!this._currentSudoku.isValidMove(move.row, move.col, move.value)) {
+    // 检查棋盘状态（固定格子）
+    if (!this._currentSudoku.canApply(move)) {
+      return false;
+    }
+
+    // 检查是否是无状态变化的 no-op，不记录历史
+    if (this._currentSudoku.isNoOp(move.row, move.col, move.value)) {
       return false;
     }
 
@@ -92,10 +103,11 @@ export class Game {
   }
 
   /**
-   * @returns {Sudoku}
+   * 获取当前数独状态的深拷贝
+   * @returns {Sudoku} Sudoku 实例的深拷贝
    */
   getSudoku() {
-    return this._currentSudoku;
+    return this._currentSudoku.clone();
   }
 
   /**

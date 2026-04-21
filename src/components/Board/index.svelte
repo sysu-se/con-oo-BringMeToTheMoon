@@ -32,8 +32,6 @@
 		return !fixed[y][x] && grid[y][x] !== 0;
 	}
 
-	// 调试：打印 invalidCells
-	$: console.log('[Board] invalidCells:', $invalidCells);
 </script>
 
 <div class="board-padding relative z-10">

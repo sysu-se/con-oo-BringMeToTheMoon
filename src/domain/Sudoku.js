@@ -108,19 +108,19 @@ export class Sudoku {
   }
 
   /**
-   * 获取棋盘数据（返回内部引用）
+   * 获取棋盘数据（返回深拷贝）
    * @returns {number[][]} 9x9 数组，值为 0-9
    */
   getGrid() {
-    return this._grid;
+    return this._grid.map(row => [...row]);
   }
 
   /**
-   * 获取固定掩码（返回内部引用）
+   * 获取固定掩码（返回深拷贝）
    * @returns {boolean[][]} 9x9 布尔数组
    */
   getFixed() {
-    return this._fixed;
+    return this._fixed.map(row => [...row]);
   }
 
   /**
@@ -136,26 +136,51 @@ export class Sudoku {
   }
 
   /**
-   * 验证移动是否合法（仅验证数字范围和固定格子，不验证数独冲突）
+   * 检查操作是否是无状态变化的 no-op
+   * @param {number} row - 行索引 [0-8]
+   * @param {number} col - 列索引 [0-8]
+   * @param {number} value - 填入的值 [0-9]
+   * @returns {boolean} true = 是 no-op
+   */
+  isNoOp(row, col, value) {
+    this._validateCoord(row, col);
+    return this._grid[row][col] === value;
+  }
+
+  /**
+   * 获取指定位置的值
+   * @param {number} row - 行索引 [0-8]
+   * @param {number} col - 列索引 [0-8]
+   * @returns {number} 格子值 0-9
+   */
+  getValue(row, col) {
+    this._validateCoord(row, col);
+    return this._grid[row][col];
+  }
+
+  /**
+   * 检查 Move 是否可以应用到当前棋盘（仅检查固定格子，不验证数独冲突）
+   * 坐标和值范围的有效性由 Move 构造函数保证
+   * @param {Move} move - 操作命令
+   * @returns {boolean} true = 可以填入，false = 固定格子不可改
+   */
+  canApply(move) {
+    if (!(move instanceof Move)) {
+      throw new Error('Sudoku.canApply requires a Move instance');
+    }
+    return !this._fixed[move.row][move.col];
+  }
+
+  /**
+   * 验证移动是否合法（兼容旧接口，内部委托给 canApply）
+   * @deprecated 使用 canApply(Move) 代替
    * @param {number} row - 行索引 [0-8]
    * @param {number} col - 列索引 [0-8]
    * @param {number} value - 填入的值 [0-9]，0 表示清除
    * @returns {boolean} true 表示可以尝试填入
    */
   isValidMove(row, col, value) {
-    if (typeof row !== 'number' || row < 0 || row > 8 || !Number.isInteger(row)) {
-      return false;
-    }
-    if (typeof col !== 'number' || col < 0 || col > 8 || !Number.isInteger(col)) {
-      return false;
-    }
-    if (typeof value !== 'number' || value < 0 || value > 9 || !Number.isInteger(value)) {
-      return false;
-    }
-    if (this._fixed[row][col]) {
-      return false;
-    }
-    return true;
+    return this.canApply(new Move({ row, col, value }));
   }
 
   /**
@@ -238,6 +263,91 @@ export class Sudoku {
 
     out += '╚═══════╧═══════╧═══════╝';
     return out;
+  }
+
+  /**
+   * 检查在指定位置放置值是否会产生冲突（行/列/宫）
+   * @param {number} row - 行索引 [0-8]
+   * @param {number} col - 列索引 [0-8]
+   * @param {number} value - 要检查的值 [1-9]
+   * @returns {boolean} true = 有冲突，false = 无冲突
+   */
+  hasConflict(row, col, value) {
+    this._validateCoord(row, col);
+    
+    // 检查行
+    for (let c = 0; c < 9; c++) {
+      if (c !== col && this._grid[row][c] === value) return true;
+    }
+    
+    // 检查列
+    for (let r = 0; r < 9; r++) {
+      if (r !== row && this._grid[r][col] === value) return true;
+    }
+    
+    // 检查宫
+    const boxRow = Math.floor(row / 3) * 3;
+    const boxCol = Math.floor(col / 3) * 3;
+    for (let r = boxRow; r < boxRow + 3; r++) {
+      for (let c = boxCol; c < boxCol + 3; c++) {
+        if ((r !== row || c !== col) && this._grid[r][c] === value) return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
+   * 获取所有冲突单元格坐标
+   * @returns {string[]} 冲突单元格坐标数组，如 ['0,0', '1,2']
+   */
+  getConflicts() {
+    const conflicts = [];
+    
+    const addConflict = (r, c) => {
+      const key = `${r},${c}`;
+      if (!conflicts.includes(key)) conflicts.push(key);
+    };
+    
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const value = this._grid[r][c];
+        if (value === 0) continue;
+        
+        // 行冲突
+        for (let cc = 0; cc < 9; cc++) {
+          if (cc !== c && this._grid[r][cc] === value) {
+            addConflict(r, c);
+            addConflict(r, cc);
+          }
+        }
+        
+        // 列冲突
+        for (let rr = 0; rr < 9; rr++) {
+          if (rr !== r && this._grid[rr][c] === value) {
+            addConflict(r, c);
+            addConflict(rr, c);
+          }
+        }
+      }
+    }
+    
+    return conflicts;
+  }
+
+  /**
+   * 检查游戏是否胜利（棋盘填满且无冲突）
+   * @returns {boolean}
+   */
+  isSolved() {
+    // 检查是否填满
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        if (this._grid[r][c] === 0) return false;
+      }
+    }
+    // 检查无冲突
+    return this.getConflicts().length === 0;
   }
 }
 
